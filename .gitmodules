@@ -1,0 +1,3 @@
+[submodule "lib/sdFat32"]
+	path = lib/sdFat32
+	url = https://github.com/pdlsurya/sdFat32
