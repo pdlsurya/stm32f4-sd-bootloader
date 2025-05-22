@@ -1,10 +1,3 @@
-/*
- * flashProgram.h
- *
- *  Created on: Dec 31, 2023
- *      Author: pdlsurya
- */
-
 #ifndef __BOOTLOADER_H_
 #define __BOOTLOADER_H_
 
