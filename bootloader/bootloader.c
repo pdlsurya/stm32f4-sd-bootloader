@@ -1,61 +1,98 @@
+<<<<<<< HEAD
+=======
+/*
+ * MIT License
+ *
+ * Copyright (c) 2025 Surya Poudel
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
+>>>>>>> c87ef42 (Enable appStartAddress read from file)
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include "stm32f4xx_hal.h"
 #include "bootloader.h"
 #include "sdFat32.h"
+#include "main.h"
 
 #define HEX_RECORD_ASCII_LEN 43
 #define HEX_RECORD_HEX_LEN 21
 
+static uint32_t appStartAddress = 0x00000000;
 static uint32_t writeCounter;
 static uint32_t writeAddressHi = 0x00000000; // upper 16-bits of the write address.
 static file appHexFile;
+static file appAddrFile;
 static uint32_t byteCnt;
 static uint8_t recBufASCII[HEX_RECORD_ASCII_LEN];
 static uint8_t recBufHEX[HEX_RECORD_HEX_LEN];
 static bool erased = false;
-static flashSector_t flashSectors[] = { { 0x08000000, 0x08003FFF }, // sector 0
-		{ 0x08004000, 0x08007FFF }, // sector 1
-		{ 0x08008000, 0x0800BFFF }, // sector 2
-		{ 0x0800C000, 0x0800FFFF }, // sector 3
-		{ 0x08010000, 0x0801FFFF }, // sector 4
-		{ 0x08020000, 0x0803FFFF }, // sector 5
-		{ 0x08040000, 0x0805FFFF }, // sector 6
-		{ 0x08060000, 0x0807FFFF }, // sector 7
-		{ 0x08080000, 0x0809FFFF }, // sector 8
-		{ 0x080A0000, 0x080BFFFF }, // sector 9
-		{ 0x080C0000, 0x080DFFFF }, // sector 10
-		{ 0x080E0000, 0x080FFFFF } // sector 11
+static flashSector_t flashSectors[] = {
+	{0x08000000, 0x08003FFF}, // sector 0
+	{0x08004000, 0x08007FFF}, // sector 1
+	{0x08008000, 0x0800BFFF}, // sector 2
+	{0x0800C000, 0x0800FFFF}, // sector 3
+	{0x08010000, 0x0801FFFF}, // sector 4
+	{0x08020000, 0x0803FFFF}, // sector 5
+	{0x08040000, 0x0805FFFF}, // sector 6
+	{0x08060000, 0x0807FFFF}, // sector 7
+	{0x08080000, 0x0809FFFF}, // sector 8
+	{0x080A0000, 0x080BFFFF}, // sector 9
+	{0x080C0000, 0x080DFFFF}, // sector 10
+	{0x080E0000, 0x080FFFFF}  // sector 11
 };
+
+extern void Error_Handler();
 
 /**
  * Reads a single ASCII hex record from the hex file. The record is returned in @p recBufASCII.
  * The length of the record is returned.
  * @return the length of the record.
  */
-static uint8_t getHexRecordASCII(void) {
+static uint8_t getHexRecordASCII(void)
+{
 	// Clear the buffer
 	memset(recBufASCII, 0, sizeof(recBufASCII));
 	uint8_t index = 0;
-	while (byteCnt < fileSize(&appHexFile)) {
+	uint8_t ch;
+	while (byteCnt < fileSize(&appHexFile))
+	{
 		// Read a single byte from the file
-		uint8_t ch = fileReadByte(&appHexFile);
+		fileRead(&appHexFile, &ch, 1);
 
 		byteCnt++;
 
 		// Skip \r (carriage return)
-		if (ch == '\r') {
+		if (ch == '\r')
+		{
 			continue;
 		}
 		// Stop reading at the end of the line
-		if (ch == '\n') {
+		if (ch == '\n')
+		{
 			break;
 		}
 
 		// Store the byte in the buffer
 		recBufASCII[index++] = ch;
-
 	}
 	return index;
 }
@@ -65,15 +102,20 @@ static uint8_t getHexRecordASCII(void) {
  * @param hexByteASCII The two character ASCII hex byte.
  * @return The binary byte.
  */
-static uint8_t getHexByte(uint8_t *hexByteASCII) {
+static uint8_t getHexByte(uint8_t *hexByteASCII)
+{
 	uint8_t hexVal = 0;
 	// Loop through each character of the hex byte
-	for (uint8_t i = 0; i < 2; i++) {
+	for (uint8_t i = 0; i < 2; i++)
+	{
 		// Check if the character is a letter (A-F)
-		if (hexByteASCII[i] >= 'A' && hexByteASCII[i] <= 'F') {
+		if (hexByteASCII[i] >= 'A' && hexByteASCII[i] <= 'F')
+		{
 			// Calculate the value of the letter (0-9 for A-F)
 			hexVal |= (hexByteASCII[i] - 55) << (4 * (1 - i));
-		} else {
+		}
+		else
+		{
 			// Calculate the value of the number (0-9)
 			hexVal |= (hexByteASCII[i] - 48) << (4 * (1 - i));
 		}
@@ -86,13 +128,15 @@ static uint8_t getHexByte(uint8_t *hexByteASCII) {
  * @param len The length of the ASCII hex record.
  * @return The number of bytes converted and stored in recBufHEX.
  */
-static uint8_t getHexRecordHEX(uint8_t len) {
+static uint8_t getHexRecordHEX(uint8_t len)
+{
 	// Clear the binary buffer
 	memset(recBufHEX, 0, sizeof(recBufHEX));
 
 	uint8_t index = 0;
 	// Convert each pair of ASCII hex characters to a binary byte
-	for (uint8_t i = 1; i < len; i += 2) {
+	for (uint8_t i = 1; i < len; i += 2)
+	{
 		recBufHEX[index++] = getHexByte(&recBufASCII[i]);
 	}
 
@@ -104,12 +148,14 @@ static uint8_t getHexRecordHEX(uint8_t len) {
  * @param recordLen The length of the record.
  * @return The checksum of the record.
  */
-static uint8_t getCheckSum(uint8_t recordLen) {
+static uint8_t getCheckSum(uint8_t recordLen)
+{
 	// Initialize the result to 0
 	uint8_t res = 0;
 
 	// Loop through each byte of the record except the checksum
-	for (int i = 0; i < recordLen - 1; i++) {
+	for (int i = 0; i < recordLen - 1; i++)
+	{
 		// Add the byte to the result
 		res += recBufHEX[i];
 	}
@@ -123,14 +169,15 @@ static uint8_t getCheckSum(uint8_t recordLen) {
  * @param recordLen The length of the binary hex record.
  * @return The struct representation of the record.
  */
-static hexRecord_t getRecordStruct(uint8_t recordLen) {
-	hexRecord_t record = { 0 };
+static hexRecord_t getRecordStruct(uint8_t recordLen)
+{
+	hexRecord_t record = {0};
 	// The length of the record is stored in the first byte
 	record.length = recBufHEX[0];
 
 	// The address of the record is stored in the second and third bytes
 	record.address = recBufHEX[2];
-	record.address |= ((uint16_t) recBufHEX[1]) << 8;
+	record.address |= ((uint16_t)recBufHEX[1]) << 8;
 
 	// The type of the record is stored in the fourth byte
 	record.type = recBufHEX[3];
@@ -150,7 +197,8 @@ static hexRecord_t getRecordStruct(uint8_t recordLen) {
  * @param startAddress The start address of the image in the flash memory.
  * @return The number of sectors to erase.
  */
-static uint8_t getEraseSectorsCount(uint32_t imageSize, uint32_t startAddress) {
+static uint8_t getEraseSectorsCount(uint32_t imageSize, uint32_t startAddress)
+{
 	// Calculate the end address of the image
 	uint32_t endAddress = startAddress + imageSize - 1;
 
@@ -158,10 +206,11 @@ static uint8_t getEraseSectorsCount(uint32_t imageSize, uint32_t startAddress) {
 	uint8_t sectorsToErase = 0;
 
 	// Loop through each sector and check if the image overlaps with it
-	for (int i = 0; i < (sizeof(flashSectors) / sizeof(flashSectors[0])); i++) {
+	for (int i = 0; i < (sizeof(flashSectors) / sizeof(flashSectors[0])); i++)
+	{
 		// Check if the image overlaps with the current sector
-		if ((endAddress >= flashSectors[i].startAddress
-				&& startAddress <= flashSectors[i].endAddress)) {
+		if ((endAddress >= flashSectors[i].startAddress && startAddress <= flashSectors[i].endAddress))
+		{
 			// Increment the number of sectors to erase
 			sectorsToErase++;
 		}
@@ -176,11 +225,13 @@ static uint8_t getEraseSectorsCount(uint32_t imageSize, uint32_t startAddress) {
  * @param address The address in the flash memory.
  * @return The sector number  where the address is located, or 0xFFFFFFFF if not found.
  */
-static uint32_t getStartSector(uint32_t address) {
+static uint32_t getStartSector(uint32_t address)
+{
 	for (uint32_t i = 0; i < (sizeof(flashSectors) / sizeof(flashSectors[0]));
-			i++) {
-		if (address >= flashSectors[i].startAddress
-				&& address <= flashSectors[i].endAddress) {
+		 i++)
+	{
+		if (address >= flashSectors[i].startAddress && address <= flashSectors[i].endAddress)
+		{
 			return i;
 		}
 	}
@@ -192,12 +243,13 @@ static uint32_t getStartSector(uint32_t address) {
  * @param startAddress The start address of the new image.
  * @return The HAL status of the erase operation.
  */
-static HAL_StatusTypeDef eraseFlash(uint32_t startAddress) {
+static HAL_StatusTypeDef eraseFlash(uint32_t startAddress)
+{
 	FLASH_EraseInitTypeDef EraseInit;
 	uint32_t SectorError;
 	uint32_t hexFileSize = fileSize(&appHexFile);
 
-	uint32_t imageSize = (uint32_t) ((double) hexFileSize / 2.8); // Approximate size of the flash image
+	uint32_t imageSize = (uint32_t)((double)hexFileSize / 2.8); // Approximate size of the flash image
 	// Calculate the start sector of the new image
 	uint8_t startSector = getStartSector(startAddress);
 
@@ -216,11 +268,13 @@ static HAL_StatusTypeDef eraseFlash(uint32_t startAddress) {
  * @brief Programs the flash memory with the new image.
  * @return The HAL status of the program operation.
  */
-static HAL_StatusTypeDef programFlash() {
+static HAL_StatusTypeDef programFlash()
+{
 	HAL_StatusTypeDef status = HAL_OK;
 
 	// Loop until the end of the file is reached
-	while (1) {
+	while (1)
+	{
 		// Read a single ASCII hex record from the file
 		uint8_t lenASCII = getHexRecordASCII();
 		// Convert the record from ASCII to binary
@@ -230,71 +284,86 @@ static HAL_StatusTypeDef programFlash() {
 
 		uint32_t writeAddress = 0x0;
 
-		if (getCheckSum(lenHEX) == record.checksum) {
+		if (getCheckSum(lenHEX) == record.checksum)
+		{
 			// Handle the different types of records
-			switch (record.type) {
-			case TYPE_ELAR: {
+			switch (record.type)
+			{
+			case TYPE_ELAR:
+			{
 				// Read the extended address from the record
-				uint16_t extendedAddress = (uint16_t) record.data[1];
-				extendedAddress |= (((uint16_t) record.data[0]) << 8);
+				uint16_t extendedAddress = (uint16_t)record.data[1];
+				extendedAddress |= (((uint16_t)record.data[0]) << 8);
 				// Store the extended address in the write address
-				writeAddressHi = (((uint32_t) extendedAddress) << 16);
+				writeAddressHi = (((uint32_t)extendedAddress) << 16);
 				break;
 			}
-			case TYPE_ESAR: {
+			case TYPE_ESAR:
+			{
 				// Read the extended address from the record
-				uint16_t extendedAddress = (uint16_t) record.data[1];
-				extendedAddress |= (((uint16_t) record.data[0]) << 8);
+				uint16_t extendedAddress = (uint16_t)record.data[1];
+				extendedAddress |= (((uint16_t)record.data[0]) << 8);
 				// Store the extended address in the write address
-				writeAddressHi = (((uint32_t) extendedAddress) << 4);
+				writeAddressHi = (((uint32_t)extendedAddress) << 4);
 				break;
 			}
-			case TYPE_DATA: {
+			case TYPE_DATA:
+			{
 				// Calculate the write address from the record address
-				writeAddress = writeAddressHi + ((uint32_t) record.address);
+				writeAddress = writeAddressHi + ((uint32_t)record.address);
 
 				// Erase the sectors if necessary
-				if (!erased) {
+				if (!erased)
+				{
 					status = eraseFlash(writeAddress);
-					if (status != HAL_OK) {
-						HAL_GPIO_WritePin(GPIOC,GPIO_PIN_13,GPIO_PIN_RESET);
+					if (status != HAL_OK)
+					{
+						HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
 						return status;
 					}
 					erased = true;
+					appStartAddress = writeAddress;
 				}
 
 				// Program the flash memory with the data from the record
-				for (uint8_t i = 0; i < record.length; i += 4) {
+				for (uint8_t i = 0; i < record.length; i += 4)
+				{
 					status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD,
-							writeAddress, *((uint32_t*) &record.data[i]));
-					if (status != HAL_OK) {
-						HAL_GPIO_WritePin(GPIOC,GPIO_PIN_13,GPIO_PIN_RESET);
+											   writeAddress, *((uint32_t *)&record.data[i]));
+					if (status != HAL_OK)
+					{
+						HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
 						return status;
 					}
 
 					writeAddress += 4;
 
 					writeCounter++;
-					if (writeCounter % 250 == 0) {
-						HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);	//Blink led to indicated flash write
+					if (writeCounter % 200 == 0)
+					{
+						HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13); // Blink led to indicated flash write
 					}
 				}
 				break;
 			}
-			case TYPE_SLAR: {
+			case TYPE_SLAR:
+			{
 				break;
 			}
 
-			case TYPE_EOF: {
-				HAL_GPIO_WritePin(GPIOC,GPIO_PIN_13,GPIO_PIN_SET);
+			case TYPE_EOF:
+			{
+				HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
 				// Return the status when the end of the file is reached
 				return status;
 				break;
 			}
 			}
-		} else {
+		}
+		else
+		{
 			// Return an error if the checksum is incorrect
-			HAL_GPIO_WritePin(GPIOC,GPIO_PIN_13,GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
 			return HAL_ERROR;
 		}
 	}
@@ -307,12 +376,14 @@ static HAL_StatusTypeDef programFlash() {
  *
  * @return true if a firmware update is available, false otherwise.
  */
-bool firmwareUpdateAvailable() {
+bool firmwareUpdateAvailable()
+{
 	// Open the app.hex file in read mode
-	appHexFile = fileOpen("/STM32-BOOT", "app.hex", FILE_MODE_READ);
+	appHexFile = fileOpen("/STM32-BOOT", "app.hex", FA_READ);
 
 	// Check if the file is valid
-	if (!fileIsValid(&appHexFile)) {
+	if (!fileIsValid(&appHexFile))
+	{
 		return false;
 	}
 	return true;
@@ -327,26 +398,44 @@ bool firmwareUpdateAvailable() {
  *
  * @return The HAL status of the programming operation.
  */
-HAL_StatusTypeDef bootloaderProcess() {
+HAL_StatusTypeDef bootloaderProcess()
+{
 	HAL_StatusTypeDef status = HAL_OK;
 
 	// Unlock the flash memory to enable programming
 	status = HAL_FLASH_Unlock();
 
-	if (status != HAL_OK) {
+	if (status != HAL_OK)
+	{
 		// Return an error if the unlocking fails
 		return status;
-
 	}
 
 	// Program the flash memory with the firmware update
 	status = programFlash();
 
-	if (status != HAL_OK) {
-		//HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-		// Return an error if the programming fails
+	if (status != HAL_OK)
+	{
+		// HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+		//  Return an error if the programming fails
 		return status;
 	}
+
+	// Save appStartAddress to SD Card
+	appAddrFile = fileOpen("/STM32-BOOT", "app.addr", FA_WRITE);
+
+	if (!fileIsValid(&appAddrFile))
+	{
+
+		return HAL_ERROR;
+	}
+
+	if (!fileWrite(&appAddrFile, (uint8_t *)&appStartAddress, 4))
+	{
+		return HAL_ERROR;
+	}
+
+	fileClose(&appAddrFile);
 
 	// Lock the flash memory after the programming is complete
 	HAL_FLASH_Lock();
@@ -361,13 +450,49 @@ HAL_StatusTypeDef bootloaderProcess() {
 }
 
 /**
+ * @brief Returns the start address of the application stored in the SD card.
+ *
+ * @return The start address of the application stored in the SD card.
+ */
+uint32_t getAppStartAddress()
+{
+	// Get appStartAddress from the SD card only if bootloader has not set the value during firmware update
+	if (appStartAddress == 0)
+	{
+		// Open the file app.addr in the /STM32-BOOT directory
+		appAddrFile = fileOpen("/STM32-BOOT", "app.addr", FA_READ);
+
+		// File does not exists
+		if (!fileIsValid(&appAddrFile))
+		{
+			// Handle the error
+			Error_Handler();
+		}
+
+		// Read the appStartAddress from the file
+		if (!fileRead(&appAddrFile, (uint8_t *)&appStartAddress, 4))
+		{
+			// Handle the error
+			Error_Handler();
+		}
+		// Close the file
+		fileClose(&appAddrFile);
+	}
+
+	// Return the start address of the application
+	return appStartAddress;
+}
+
+/**
  * @brief Initializes the bootloader by setting up the FAT32 file system.
  *
  * @return true if the initialization is successful, false otherwise.
  */
-bool bootloaderInit() {
+bool bootloaderInit()
+{
 	// Initialize the FAT32 file system
-	if (!sdFat32Init()) {
+	if (!sdFat32Init())
+	{
 		// Return false if initialization fails
 		return false;
 	}
