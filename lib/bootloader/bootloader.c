@@ -300,28 +300,28 @@ static HAL_StatusTypeDef programFlash()
 			{
 			case TYPE_ELAR:
 			{
-				// Read the extended address from the record
+				// Read the extended linear address from the record
 				uint16_t extendedAddress = (uint16_t)record.data[1];
 				extendedAddress |= (((uint16_t)record.data[0]) << 8);
-				// Store the extended address in the write address
+				// Store the extended linear address in the writeAddressHi variable by shifting it by 16 bits to the left
 				writeAddressHi = (((uint32_t)extendedAddress) << 16);
 				break;
 			}
 			case TYPE_ESAR:
 			{
-				// Read the extended address from the record
+				// Read the extended segment address from the record
 				uint16_t extendedAddress = (uint16_t)record.data[1];
 				extendedAddress |= (((uint16_t)record.data[0]) << 8);
-				// Store the extended address in the write address
+				// Store the extended segment address in the writeAddressHi variable by shifting it by 4 bits to the left
 				writeAddressHi = (((uint32_t)extendedAddress) << 4);
 				break;
 			}
 			case TYPE_DATA:
 			{
-				// Calculate the write address from the record address
+				// Calculate the write address from the record address and the extended address
 				writeAddress = writeAddressHi + ((uint32_t)record.address);
 
-				// Erase the sectors if necessary
+				// Erase the sectors of the flash memory where the new image is going to be written
 				if (!erased)
 				{
 					// Check if the write address is in the bootloader region
@@ -336,7 +336,7 @@ static HAL_StatusTypeDef programFlash()
 						return status;
 					}
 					erased = true;
-					appStartAddress = writeAddress;
+					appStartAddress = writeAddress; // Write address here is the start address of the application
 				}
 
 				// Program the flash memory with the data from the record
@@ -362,6 +362,7 @@ static HAL_StatusTypeDef programFlash()
 			}
 			case TYPE_SLAR:
 			{
+				// Used in MDK-ARM only.
 				break;
 			}
 
