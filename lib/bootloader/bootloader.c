@@ -29,6 +29,7 @@
 #include "sdFat32.h"
 #include "main.h"
 
+#define BOOTLOADER_END_ADDRESS 0x08003FFF
 #define HEX_RECORD_ASCII_LEN 43
 #define HEX_RECORD_HEX_LEN 21
 
@@ -235,6 +236,18 @@ static uint32_t getStartSector(uint32_t address)
 }
 
 /**
+ * @brief Checks if the application image overlaps with the bootloader.
+ * @param startAddress The start address of the application image.
+ * @return true if the application overlaps with the bootloader, false otherwise.
+ */
+static inline bool appOverlapsBootloader(uint32_t startAddress)
+{
+	// If the start address of the application is less than or equal to the end address of the bootloader,
+	// then the application overlaps with the bootloader
+	return startAddress <= BOOTLOADER_END_ADDRESS;
+}
+
+/**
  * @brief Erases the sectors of the flash memory where the new image is going to be written.
  * @param startAddress The start address of the new image.
  * @return The HAL status of the erase operation.
@@ -311,6 +324,11 @@ static HAL_StatusTypeDef programFlash()
 				// Erase the sectors if necessary
 				if (!erased)
 				{
+					// Check if the write address is in the bootloader region
+					if (appOverlapsBootloader(writeAddress))
+					{
+						return HAL_ERROR;
+					}
 					status = eraseFlash(writeAddress);
 					if (status != HAL_OK)
 					{
