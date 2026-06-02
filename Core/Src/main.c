@@ -94,7 +94,7 @@ int main(void)
 	if (firmwareUpdateAvailable())
 	{
 		// update the firmware
-		if (bootloaderProcess() != HAL_OK)
+		if (updateFirmware() != HAL_OK)
 		{
 			Error_Handler();
 		}

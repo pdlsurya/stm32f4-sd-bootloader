@@ -6,10 +6,9 @@ A minimal bootloader for STM32F4 microcontrollers that reads Intel HEX firmware 
 ## Features
 
 - Parses and flashes Intel HEX files from `/STM32-BOOT/app.hex`
-- Supports Intel HEX record types: DATA, EOF, ELAR (0x04), ESAR (0x02), SLAR (0x05)
-- Automatically erases only the flash sectors necessary for the image
+- Supports Intel HEX record types: DATA, EOF, ELAR (0x04), ESAR (0x02), and tolerates SLAR (0x05)
+- Approximates the programmed image span to erase the required flash sectors
 - Validates checksum for each HEX record before programming
-- Calculates real image size to optimize sector erasure
 - FAT32 SD card access through a `sdFat32` file abstraction layer
 - Dynamically saves the application's start address to `/STM32-BOOT/app.addr`, eliminating the need for hardcoded addresses and enabling flexible placement of the application in flash memory.
 - Toggles LED on `GPIOC Pin 13` during flashing and error states
@@ -23,15 +22,18 @@ A minimal bootloader for STM32F4 microcontrollers that reads Intel HEX firmware 
 4. On power-up or reset, the bootloader will:
    - Initialize the SD card and FAT32 file system
    - Check for a valid `app.hex`
-   - Erase necessary flash sectors based on the size of the firmware
+   - Estimate the programmed span and erase the overlapping flash sectors
    - Program the firmware to internal flash memory
    - Save the start address to `app.addr`
    - Delete `app.hex`
    - Light the LED to signal completion or turn off on error
 
+The application image must start above the bootloader region. In the current layout,
+that means the HEX image must not begin at or below `0x08003FFF`.
+
 ## Flash Sector Map
 
-The bootloader uses a fixed sector map covering:
+The bootloader uses a fixed STM32F4 sector map covering:
 
 ```
 0x08000000 - 0x08003FFF  (Sector 0)
@@ -40,7 +42,11 @@ The bootloader uses a fixed sector map covering:
 0x080E0000 - 0x080FFFFF  (Sector 11)
 ```
 
-Ensure that the firmware being flashed falls within these bounds.
+Sector 0 (`0x08000000` - `0x08003FFF`) is reserved for the bootloader itself.
+The application image should be linked to start in sector 1 or above.
+
+The erase range is estimated from the Intel HEX file size, then aligned to the
+flash sectors that overlap the target address range.
 
 ## LED Status (GPIOC Pin 13)
 
@@ -64,7 +70,7 @@ git clone --recurse-submodules https://github.com/pdlsurya/stm32f4-sd-bootloader
 |---------------------------|--------------------------------------------------------------|
 | `bootloaderInit()`        | Initializes the SD and FAT32 system                          |
 | `firmwareUpdateAvailable()` | Checks for presence of `app.hex`                             |
-| `bootloaderProcess()`     | Erases flash, writes firmware, saves app address, deletes hex |
+| `updateFirmware()`        | Erases flash, writes firmware, saves app address, deletes hex |
 | `getAppStartAddress()`    | Loads the application start address from `app.addr`          |
 | `APP_START(addr)`         | Jumps to application at specified address                    |
 

@@ -72,12 +72,38 @@ extern "C"
 		recordType_t type;
 	} hexRecord_t;
 
-	HAL_StatusTypeDef bootloaderProcess();
+	/**
+	 * @brief Programs the firmware image from the SD card into flash.
+	 *
+	 * The function erases the destination flash sectors, writes the new image,
+	 * stores the application start address, and removes the processed HEX file.
+	 *
+	 * @return HAL status of the update operation.
+	 */
+	HAL_StatusTypeDef updateFirmware();
 
+	/**
+	 * @brief Initializes the bootloader storage layer.
+	 *
+	 * @return true when the SD/FAT32 stack is ready, false otherwise.
+	 */
 	bool bootloaderInit();
 
+	/**
+	 * @brief Checks whether a firmware image is present on the SD card.
+	 *
+	 * @return true when `app.hex` is available, false otherwise.
+	 */
 	bool firmwareUpdateAvailable();
 
+	/**
+	 * @brief Returns the stored application start address.
+	 *
+	 * If the bootloader has not already cached the address during an update,
+	 * this reads it from `app.addr` on the SD card.
+	 *
+	 * @return Application start address.
+	 */
 	uint32_t getAppStartAddress();
 
 #ifdef __cplusplus
